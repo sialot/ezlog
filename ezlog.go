@@ -148,8 +148,6 @@ func itoa(buf *[]byte, i int, wid int) {
 // formatHeader
 func (l *Log) formatHeader(buf *[]byte, t time.Time, prefix string) {
 
-	*buf = append(*buf, prefix...)
-
 	year, month, day := t.Date()
 	itoa(buf, year, 4)
 	*buf = append(*buf, '/')
@@ -168,6 +166,8 @@ func (l *Log) formatHeader(buf *[]byte, t time.Time, prefix string) {
 	*buf = append(*buf, '.')
 	itoa(buf, t.Nanosecond()/1e6, 3)
 
+	*buf = append(*buf, ' ')
+	*buf = append(*buf, prefix...)
 	*buf = append(*buf, ' ')
 }
 
