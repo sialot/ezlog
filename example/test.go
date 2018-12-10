@@ -6,7 +6,7 @@ import (
 
 func main() {
 
-	config := log.Config{Filename: "e:/goTest/newLogger"}
+	config := log.Config{Filename: "/var/log/demo"}
 	logger := log.New(config)
 
 	logger.Print("this is a test log.")
