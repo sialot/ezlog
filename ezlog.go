@@ -166,7 +166,7 @@ func itoa(buf *[]byte, i int, wid int) {
 	*buf = append(*buf, b[bp:]...)
 }
 
-// formatHeader
+// 格式化header
 func (l *Log) formatHeader(buf *[]byte, t *time.Time, prefix string) {
 
 	year, month, day := t.Date()
@@ -192,7 +192,7 @@ func (l *Log) formatHeader(buf *[]byte, t *time.Time, prefix string) {
 	*buf = append(*buf, ' ')
 }
 
-// output writes the output for a logging event. The string s contains
+// 具体输出逻辑
 func (l *Log) output(now *time.Time, s string, prefix string) error {
 
 	l.mu.Lock()
@@ -207,7 +207,7 @@ func (l *Log) output(now *time.Time, s string, prefix string) error {
 	return err
 }
 
-// writeLog
+// 写日志
 func (l *Log) writeLog(msg string, level int) {
 
 	t := time.Now()

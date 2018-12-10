@@ -6,7 +6,8 @@ import (
 
 func main() {
 
-	logger := ezlog.New("/var/log/ezlog-", "2006-01-02", "log", ezlog.LVL_DEBUG)
+	config := log.Config{Filename: "e:/goTest/newLogger"}
+	logger := log.New(&config)
 
 	logger.Print("this is a test log.")
 	logger.Printf("this is a test log. %d", 123)

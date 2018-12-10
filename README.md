@@ -1,8 +1,18 @@
 # ezlog
 go语言的文件日志输出工具
 
+## 初始化参数
+- filename 文件路径
+- pattern  日期表达式（可选，默认无）
+- suffix   日志文件后缀（可选，默认"log"）
+- logLevel 日志级别（可选，默认"LVL_DEBUG"）
 
-	logger := ezlog.New("/var/log/ezlog-", "2006-01-02", "log", ezlog.LVL_DEBUG)
+文件输出路径按：filename + pattern + "." + suffix 拼接
+
+## 示例：
+
+	config := log.Config{Filename: "e:/goTest/newLogger"}
+	logger := log.New(&config)
 
 	logger.Print("this is a test log.")
 	logger.Printf("this is a test log. %d", 123)
