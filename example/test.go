@@ -1,7 +1,7 @@
 package main
 
 import (
-	ezlog "github.com/sialot/ezlog"
+	log "github.com/sialot/ezlog"
 )
 
 func main() {
