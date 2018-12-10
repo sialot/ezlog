@@ -28,14 +28,16 @@ const (
 // curLogFile 当前日志文件
 // buf for accumulating text to write
 type Log struct {
-	Filename   string
-	Pattern    string
-	Suffix     string
-	LogLevel   int
-	mu         sync.Mutex
-	curLogFile *os.File
-	buf        []byte
-	isInited   bool
+	Filename      string
+	Pattern       string
+	Suffix        string
+	LogLevel      int
+	BufferSize    int
+	mu            sync.Mutex
+	curLogFile    *os.File
+	buf           []byte
+	isInited      bool
+	isFlushTiming bool
 }
 
 // New
@@ -72,6 +74,7 @@ func (l *Log) init() error {
 			if l.Suffix == "" {
 				l.Suffix = "log"
 			}
+
 			l.isInited = true
 		}
 
@@ -144,6 +147,11 @@ func (l *Log) prepareLogFile(filepath string) error {
 
 		if strings.Compare(l.curLogFile.Name(), filepath) != 0 {
 
+			flushErr := l.doFlush()
+			if flushErr != nil {
+				return flushErr
+			}
+
 			l.curLogFile.Close()
 			err := l.createAndOpenFile(filepath)
 			if err != nil {
@@ -157,7 +165,6 @@ func (l *Log) prepareLogFile(filepath string) error {
 		if err != nil {
 			return err
 		}
-
 	}
 	return nil
 }
@@ -198,6 +205,40 @@ func appendLevel(buf *[]byte, level int) {
 	*buf = append(*buf, prefix...)
 }
 
+// Flush
+func (l *Log) Flush() error {
+
+	err := l.doFlush()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// doFlush
+func (l *Log) doFlush() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, err := l.curLogFile.Write(l.buf)
+	if err != nil {
+		fmt.Printf("flush log error![%v]\n", err)
+		return err
+	}
+	l.buf = l.buf[:0]
+	return nil
+}
+
+// autoFlush
+func (l *Log) autoFlush() error {
+	time.Sleep(50 * 1e6 * time.Nanosecond)
+	err := l.doFlush()
+	if err != nil {
+		return err
+	}
+	l.isFlushTiming = false
+	return nil
+}
+
 // 写日志
 func (l *Log) writeLog(msg string, level int) error {
 	err := l.init()
@@ -209,15 +250,21 @@ func (l *Log) writeLog(msg string, level int) error {
 	if l.LogLevel <= level {
 
 		l.mu.Lock()
-		defer l.mu.Unlock()
 
 		t := time.Now()
 		err := l.prepareLogFile(l.getLogPath(&t))
 		if err != nil {
+			l.mu.Unlock()
+			flushErr := l.doFlush()
+			if flushErr != nil {
+				return flushErr
+			}
 			return err
 		}
 
-		l.buf = l.buf[:0]
+		if l.BufferSize == 0 {
+			l.buf = l.buf[:0]
+		}
 
 		//format Header
 		year, month, day := t.Date()
@@ -247,10 +294,21 @@ func (l *Log) writeLog(msg string, level int) error {
 		if len(msg) == 0 || msg[len(msg)-1] != '\n' {
 			l.buf = append(l.buf, '\n')
 		}
-		_, err = l.curLogFile.Write(l.buf)
-		if err != nil {
-			fmt.Printf("write log error![%v]\n", err)
-			return err
+		l.mu.Unlock()
+
+		if len(l.buf) > l.BufferSize {
+
+			err := l.doFlush()
+			if err != nil {
+				return err
+			}
+		} else {
+
+			if !l.isFlushTiming {
+				l.isFlushTiming = true
+				go l.autoFlush()
+			}
+
 		}
 	}
 	return nil
