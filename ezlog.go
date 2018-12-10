@@ -4,7 +4,6 @@ package ezlog
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,12 +98,13 @@ func (l *Log) getLogPath(t *time.Time) string {
 	return buffer.String()
 }
 
-// 创建新文件
-func (l *Log) createNewFile(filepath string) {
+// 创建并打开新文件
+func (l *Log) createAndOpenFile(filepath string) error {
 
 	exist, err := isPathExist(filepath)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("func isPathExist error![%v]\n", err)
+		return err
 	} else {
 
 		if !exist {
@@ -112,7 +112,8 @@ func (l *Log) createNewFile(filepath string) {
 			file, err := os.Create(filepath)
 			defer file.Close()
 			if err != nil {
-				fmt.Println(err)
+				fmt.Printf("create new log file error![%v]\n", err)
+				return err
 			}
 		}
 	}
@@ -120,32 +121,45 @@ func (l *Log) createNewFile(filepath string) {
 	logFile, err := os.OpenFile(filepath, os.O_RDWR|os.O_APPEND, 0644)
 
 	if err != nil {
-		log.Fatalln("open file error !")
+		fmt.Printf("open new log file error![%v]\n", err)
+		return err
 	}
 
 	l.curLogFile = logFile
+	return nil
 }
 
-// 检查文件是否存在，不存在就新建
-func (l *Log) checkLogFile(filepath string) {
+// 准备日志文件
+func (l *Log) prepareLogFile(filepath string) error {
 
-	// 当前存在正写入的文件
 	if l.curLogFile != nil {
 
-		// 需要更换文件，加锁
 		if !(strings.Compare(l.curLogFile.Name(), filepath) == 0) {
 
 			l.mu.Lock()
 			defer l.mu.Unlock()
-
 			if strings.Compare(l.curLogFile.Name(), filepath) != 0 {
 				l.curLogFile.Close()
-				l.createNewFile(filepath)
+				err := l.createAndOpenFile(filepath)
+
+				if err != nil {
+					return err
+				}
 			}
 		}
 	} else {
-		l.createNewFile(filepath)
+
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		if l.curLogFile == nil {
+			err := l.createAndOpenFile(filepath)
+
+			if err != nil {
+				return err
+			}
+		}
 	}
+	return nil
 }
 
 // Cheap integer to fixed-width decimal ASCII. Give a negative width to avoid zero-padding.
@@ -166,72 +180,75 @@ func itoa(buf *[]byte, i int, wid int) {
 	*buf = append(*buf, b[bp:]...)
 }
 
-// 格式化header
-func (l *Log) formatHeader(buf *[]byte, t *time.Time, prefix string) {
+// appendLevel
+func appendLevel(buf *[]byte, level int) {
 
-	year, month, day := t.Date()
-	itoa(buf, year, 4)
-	*buf = append(*buf, '/')
-	itoa(buf, int(month), 2)
-	*buf = append(*buf, '/')
-	itoa(buf, day, 2)
-	*buf = append(*buf, ' ')
-
-	hour, min, sec := t.Clock()
-	itoa(buf, hour, 2)
-	*buf = append(*buf, ':')
-	itoa(buf, min, 2)
-	*buf = append(*buf, ':')
-	itoa(buf, sec, 2)
-
-	*buf = append(*buf, '.')
-	itoa(buf, t.Nanosecond()/1e6, 3)
-
-	*buf = append(*buf, ' ')
-	*buf = append(*buf, prefix...)
-	*buf = append(*buf, ' ')
-}
-
-// 具体输出逻辑
-func (l *Log) output(now *time.Time, s string, prefix string) error {
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.buf = l.buf[:0]
-	l.formatHeader(&l.buf, now, prefix)
-	l.buf = append(l.buf, s...)
-	if len(s) == 0 || s[len(s)-1] != '\n' {
-		l.buf = append(l.buf, '\n')
+	var prefix string
+	switch level {
+	case LVL_DEBUG:
+		prefix = "[Debug]"
+	case LVL_INFO:
+		prefix = "[Info]"
+	case LVL_WARN:
+		prefix = "[Warn]"
+	case LVL_ERROR:
+		prefix = "[Error]"
 	}
-	_, err := l.curLogFile.Write(l.buf)
-	return err
+
+	*buf = append(*buf, prefix...)
 }
 
 // 写日志
-func (l *Log) writeLog(msg string, level int) {
+func (l *Log) writeLog(msg string, level int) error {
 
-	t := time.Now()
 	if l.c.LogLevel <= level {
+		t := time.Now()
+		err := l.prepareLogFile(l.getLogPath(&t))
 
-		l.checkLogFile(l.getLogPath(&t))
-
-		var prefix string
-
-		switch level {
-		case LVL_DEBUG:
-			prefix = "[Debug]"
-		case LVL_INFO:
-			prefix = "[Info]"
-		case LVL_WARN:
-			prefix = "[Warn]"
-		case LVL_ERROR:
-			prefix = "[Error]"
-		default:
-			prefix = ""
+		if err != nil {
+			return err
 		}
 
-		l.output(&t, msg, prefix)
+		l.mu.Lock()
+		l.buf = l.buf[:0]
+
+		//format Header
+		year, month, day := t.Date()
+		itoa(&l.buf, year, 4)
+		l.buf = append(l.buf, '/')
+		itoa(&l.buf, int(month), 2)
+		l.buf = append(l.buf, '/')
+		itoa(&l.buf, day, 2)
+		l.buf = append(l.buf, ' ')
+
+		hour, min, sec := t.Clock()
+		itoa(&l.buf, hour, 2)
+		l.buf = append(l.buf, ':')
+		itoa(&l.buf, min, 2)
+		l.buf = append(l.buf, ':')
+		itoa(&l.buf, sec, 2)
+
+		l.buf = append(l.buf, '.')
+		itoa(&l.buf, t.Nanosecond()/1e6, 3)
+		l.buf = append(l.buf, ' ')
+
+		// log level
+		appendLevel(&l.buf, level)
+
+		// log msg
+		l.buf = append(l.buf, msg...)
+		if len(msg) == 0 || msg[len(msg)-1] != '\n' {
+			l.buf = append(l.buf, '\n')
+		}
+		_, err = l.curLogFile.Write(l.buf)
+		if err != nil {
+			fmt.Printf("write log error![%v]\n", err)
+			l.mu.Unlock()
+			return err
+		}
+		l.mu.Unlock()
 	}
+	return nil
 }
 
 // 业务日志，不受日志级别影响
