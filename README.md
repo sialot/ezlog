@@ -11,39 +11,51 @@ go语言的文件日志输出工具
 
 ## 示例：
 
-默认参数：
+最小参数：
 
+	package main
+	
 	import (
-		log "github.com/sialot/ezlog"
+		"github.com/sialot/ezlog"
 	)
-
+	
 	func main() {
-		config := log.Config{Filename: "/var/log/demo/newLogger"}
-		logger := log.New(config)
-
+	
+		logger := &ezlog.Log{
+			Filename: "/var/log/demo"}
+	
 		logger.Print("this is a test log.")
 		logger.Printf("this is a test log. %d", 123)
 		logger.Debug("debug msg")
 		logger.Info("info msg")
 		logger.Warn("warn msg")
 		logger.Error("error msg")
+	
 	}
-
 
 
 
 所有参数：
 
+	package main
+	
 	import (
-		log "github.com/sialot/ezlog"
+		"github.com/sialot/ezlog"
 	)
-
+	
 	func main() {
-		config := log.Config{Filename: "/var/log/demo/newLogger", Pattern: "2006-01-02_150405", Suffix:"txt", LogLevel:log.LVL_INFO}
+	
+		logger := &ezlog.Log{
+			Filename: "/var/log/demo",
+			Pattern:  "-2006-01-02_150405",
+			Suffix:   "txt",
+			LogLevel: ezlog.LVL_DEBUG}
+	
 		logger.Print("this is a test log.")
 		logger.Printf("this is a test log. %d", 123)
 		logger.Debug("debug msg")
 		logger.Info("info msg")
 		logger.Warn("warn msg")
 		logger.Error("error msg")
+	
 	}

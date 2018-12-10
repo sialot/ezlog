@@ -20,56 +20,64 @@ const (
 	LVL_ERROR
 )
 
-// 初始化参数
-// Init params
-// filename 文件路径
-// pattern  日期表达式（可选，默认无）
-// suffix   日志文件后缀（可选，默认"log"）
-// logLevel 日志级别（可选，默认"LVL_DEBUG"）
-type Config struct {
-	Filename string
-	Pattern  string
-	Suffix   string
-	LogLevel int
-}
-
 // Log
+// Filename 文件路径
+// Pattern  日期表达式（可选，默认无）
+// Suffix   日志文件后缀（可选，默认"log"）
+// LogLevel 日志级别（可选，默认"LVL_DEBUG"）
+// curLogFile 当前日志文件
+// buf for accumulating text to write
 type Log struct {
+	Filename   string
+	Pattern    string
+	Suffix     string
+	LogLevel   int
 	mu         sync.Mutex
 	curLogFile *os.File
-	buf        []byte // for accumulating text to write
-	c          Config
+	buf        []byte
+	isInited   bool
 }
 
 // New
-func New(config Config) *Log {
+func (l *Log) init() error {
 
-	// 准备日志文件，父文件夹
-	_dir := filepath.Dir(config.Filename)
-	exist, err := isPathExist(_dir)
-	if err != nil {
-		fmt.Printf("get dir error![%v]\n", err)
-		return nil
-	}
+	if !l.isInited {
 
-	if !exist {
-		err := os.MkdirAll(_dir, os.ModePerm)
-		if err != nil {
-			fmt.Printf("mkdir failed![%v]\n", err)
-			return nil
+		l.mu.Lock()
+		defer l.mu.Unlock()
+
+		if !l.isInited {
+
+			// 准备日志文件，父文件夹
+			_dir := filepath.Dir(l.Filename)
+			exist, err := isPathExist(_dir)
+			if err != nil {
+				fmt.Printf("get dir error![%v]\n", err)
+				return err
+			}
+
+			if !exist {
+				err := os.MkdirAll(_dir, os.ModePerm)
+				if err != nil {
+					fmt.Printf("mkdir failed![%v]\n", err)
+					return err
+				}
+			}
+
+			// 准备默认参数
+			if l.LogLevel == 0 {
+				l.LogLevel = LVL_DEBUG
+			}
+
+			if l.Suffix == "" {
+				l.Suffix = "log"
+			}
+			l.isInited = true
 		}
+
 	}
 
-	// 准备默认参数
-	if config.LogLevel == 0 {
-		config.LogLevel = LVL_DEBUG
-	}
-
-	if config.Suffix == "" {
-		config.Suffix = "log"
-	}
-
-	return &Log{c: config}
+	return nil
 }
 
 // 判断文件夹是否存在
@@ -87,14 +95,14 @@ func isPathExist(path string) (bool, error) {
 // 计算日志文件路径
 func (l *Log) getLogPath(t *time.Time) string {
 	var buffer bytes.Buffer
-	buffer.WriteString(l.c.Filename)
+	buffer.WriteString(l.Filename)
 
-	if l.c.Pattern != "" {
-		buffer.WriteString(t.Format(l.c.Pattern))
+	if l.Pattern != "" {
+		buffer.WriteString(t.Format(l.Pattern))
 	}
 
 	buffer.WriteString(".")
-	buffer.WriteString(l.c.Suffix)
+	buffer.WriteString(l.Suffix)
 	return buffer.String()
 }
 
@@ -134,30 +142,22 @@ func (l *Log) prepareLogFile(filepath string) error {
 
 	if l.curLogFile != nil {
 
-		if !(strings.Compare(l.curLogFile.Name(), filepath) == 0) {
+		if strings.Compare(l.curLogFile.Name(), filepath) != 0 {
 
-			l.mu.Lock()
-			defer l.mu.Unlock()
-			if strings.Compare(l.curLogFile.Name(), filepath) != 0 {
-				l.curLogFile.Close()
-				err := l.createAndOpenFile(filepath)
-
-				if err != nil {
-					return err
-				}
-			}
-		}
-	} else {
-
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		if l.curLogFile == nil {
+			l.curLogFile.Close()
 			err := l.createAndOpenFile(filepath)
-
 			if err != nil {
 				return err
 			}
+
 		}
+	} else {
+
+		err := l.createAndOpenFile(filepath)
+		if err != nil {
+			return err
+		}
+
 	}
 	return nil
 }
@@ -200,16 +200,23 @@ func appendLevel(buf *[]byte, level int) {
 
 // 写日志
 func (l *Log) writeLog(msg string, level int) error {
+	err := l.init()
+	if err != nil {
+		fmt.Printf("init error![%v]\n", err)
+		return err
+	}
 
-	if l.c.LogLevel <= level {
+	if l.LogLevel <= level {
+
+		l.mu.Lock()
+		defer l.mu.Unlock()
+
 		t := time.Now()
 		err := l.prepareLogFile(l.getLogPath(&t))
-
 		if err != nil {
 			return err
 		}
 
-		l.mu.Lock()
 		l.buf = l.buf[:0]
 
 		//format Header
@@ -243,10 +250,8 @@ func (l *Log) writeLog(msg string, level int) error {
 		_, err = l.curLogFile.Write(l.buf)
 		if err != nil {
 			fmt.Printf("write log error![%v]\n", err)
-			l.mu.Unlock()
 			return err
 		}
-		l.mu.Unlock()
 	}
 	return nil
 }
