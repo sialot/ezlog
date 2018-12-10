@@ -13,6 +13,7 @@ import (
 )
 
 // 日志级别常量
+// LogLevel Constants
 const (
 	LVL_DEBUG = 1 << iota
 	LVL_INFO
@@ -20,25 +21,32 @@ const (
 	LVL_ERROR
 )
 
-// 日志对象类型
-type Log struct {
-	mu         sync.Mutex
-	filename   string
-	pattern    string
-	suffix     string
-	logLevel   int
-	curLogFile *os.File
-	buf        []byte // for accumulating text to write
+// 初始化参数
+// Init params
+// filename 文件路径
+// pattern  日期表达式（可选，默认无）
+// suffix   日志文件后缀（可选，默认"log"）
+// logLevel 日志级别（可选，默认"LVL_DEBUG"）
+type Config struct {
+	Filename string
+	Pattern  string
+	Suffix   string
+	LogLevel int
 }
 
-// filename 文件路径
-// pattern  日期表达式
-// suffix   日志后缀
-// logLevel 日志级别
-func New(filename string, pattern string, suffix string, logLevel int) *Log {
+// Log
+type Log struct {
+	mu         sync.Mutex
+	curLogFile *os.File
+	buf        []byte // for accumulating text to write
+	c          *Config
+}
+
+// New
+func New(config *Config) *Log {
 
 	// 准备日志文件，父文件夹
-	_dir := filepath.Dir(filename)
+	_dir := filepath.Dir(config.Filename)
 	exist, err := isPathExist(_dir)
 	if err != nil {
 		fmt.Printf("get dir error![%v]\n", err)
@@ -53,7 +61,16 @@ func New(filename string, pattern string, suffix string, logLevel int) *Log {
 		}
 	}
 
-	return &Log{filename: filename, pattern: pattern, suffix: suffix, logLevel: logLevel}
+	// 准备默认参数
+	if config.LogLevel == 0 {
+		config.LogLevel = LVL_DEBUG
+	}
+
+	if config.Suffix == "" {
+		config.Suffix = "log"
+	}
+
+	return &Log{c: config}
 }
 
 // 判断文件夹是否存在
@@ -68,13 +85,17 @@ func isPathExist(path string) (bool, error) {
 	return false, err
 }
 
-// 计算按日期格式的文件路径
-func (l *Log) getLogPath(t time.Time) string {
+// 计算日志文件路径
+func (l *Log) getLogPath(t *time.Time) string {
 	var buffer bytes.Buffer
-	buffer.WriteString(l.filename)
-	buffer.WriteString(t.Format(l.pattern))
+	buffer.WriteString(l.c.Filename)
+
+	if l.c.Pattern != "" {
+		buffer.WriteString(t.Format(l.c.Pattern))
+	}
+
 	buffer.WriteString(".")
-	buffer.WriteString(l.suffix)
+	buffer.WriteString(l.c.Suffix)
 	return buffer.String()
 }
 
@@ -146,7 +167,7 @@ func itoa(buf *[]byte, i int, wid int) {
 }
 
 // formatHeader
-func (l *Log) formatHeader(buf *[]byte, t time.Time, prefix string) {
+func (l *Log) formatHeader(buf *[]byte, t *time.Time, prefix string) {
 
 	year, month, day := t.Date()
 	itoa(buf, year, 4)
@@ -172,7 +193,7 @@ func (l *Log) formatHeader(buf *[]byte, t time.Time, prefix string) {
 }
 
 // output writes the output for a logging event. The string s contains
-func (l *Log) output(now time.Time, s string, prefix string) error {
+func (l *Log) output(now *time.Time, s string, prefix string) error {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -190,9 +211,9 @@ func (l *Log) output(now time.Time, s string, prefix string) error {
 func (l *Log) writeLog(msg string, level int) {
 
 	t := time.Now()
-	if l.logLevel <= level {
+	if l.c.LogLevel <= level {
 
-		l.checkLogFile(l.getLogPath(t))
+		l.checkLogFile(l.getLogPath(&t))
 
 		var prefix string
 
@@ -209,7 +230,7 @@ func (l *Log) writeLog(msg string, level int) {
 			prefix = ""
 		}
 
-		l.output(t, msg, prefix)
+		l.output(&t, msg, prefix)
 	}
 }
 
