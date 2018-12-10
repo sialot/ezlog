@@ -11,9 +11,19 @@ go语言的文件日志输出工具
 
 ## 示例：
 
-	config := log.Config{Filename: "e:/goTest/newLogger"}
+默认参数：
+	config := log.Config{Filename: "/var/log/demo/newLogger"}
 	logger := log.New(config)
 
+	logger.Print("this is a test log.")
+	logger.Printf("this is a test log. %d", 123)
+	logger.Debug("debug msg")
+	logger.Info("info msg")
+	logger.Warn("warn msg")
+	logger.Error("error msg")
+
+所有参数：
+	config := log.Config{Filename: "/var/log/demo/newLogger", Pattern: "2006-01-02_150405", suffix:"txt"}
 	logger.Print("this is a test log.")
 	logger.Printf("this is a test log. %d", 123)
 	logger.Debug("debug msg")
