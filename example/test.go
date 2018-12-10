@@ -6,7 +6,7 @@ import (
 
 func main() {
 
-	logger := &ezlog.Log{
+	logger := ezlog.Log{
 		Filename: "/var/log/demo",
 		Pattern:  "-2006-01-02_150405",
 		Suffix:   "txt",

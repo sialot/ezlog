@@ -21,7 +21,7 @@ go语言的文件日志输出工具
 	
 	func main() {
 	
-		logger := &ezlog.Log{
+		logger := ezlog.Log{
 			Filename: "/var/log/demo"}
 	
 		logger.Print("this is a test log.")
@@ -45,7 +45,7 @@ go语言的文件日志输出工具
 	
 	func main() {
 	
-		logger := &ezlog.Log{
+		logger := ezlog.Log{
 			Filename: "/var/log/demo",
 			Pattern:  "-2006-01-02_150405",
 			Suffix:   "txt",
