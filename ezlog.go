@@ -38,11 +38,11 @@ type Log struct {
 	mu         sync.Mutex
 	curLogFile *os.File
 	buf        []byte // for accumulating text to write
-	c          *Config
+	c          Config
 }
 
 // New
-func New(config *Config) *Log {
+func New(config Config) *Log {
 
 	// 准备日志文件，父文件夹
 	_dir := filepath.Dir(config.Filename)
