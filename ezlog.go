@@ -21,24 +21,32 @@ const (
 )
 
 // Log
-// Filename 文件路径
-// Pattern  日期表达式（可选，默认无）
-// Suffix   日志文件后缀（可选，默认"log"）
-// LogLevel 日志级别（可选，默认"LVL_DEBUG"）
-// curLogFile 当前日志文件
-// buf for accumulating text to write
+//
+// Filename      文件路径
+// Pattern       日期表达式（可选，默认无）
+// Suffix        日志文件后缀（可选，默认"log"）
+// LogLevel      日志级别（可选，默认"LVL_DEBUG"）
+// BufferSize    缓存容量
+// autoFlush     自动flush标志
+// curLogFile    当前日志文件
+// buf           for accumulating text to write
 type Log struct {
-	Filename   string
-	Pattern    string
-	Suffix     string
-	LogLevel   int
-	mu         sync.Mutex
-	curLogFile *os.File
-	buf        []byte
-	isInited   bool
+	Filename          string
+	Pattern           string
+	Suffix            string
+	LogLevel          int
+	BufferSize        int
+	autoFlush         bool
+	autoFlushDuration int
+	mu                sync.Mutex
+	curLogFile        *os.File
+	buf               []byte
+	isInited          bool
+	isFlushTiming     bool
 }
 
-// New
+// 初始化
+// init
 func (l *Log) init() error {
 
 	if !l.isInited {
@@ -48,7 +56,7 @@ func (l *Log) init() error {
 
 		if !l.isInited {
 
-			// 准备日志文件，父文件夹
+			// prepare the parent folder of the log file
 			_dir := filepath.Dir(l.Filename)
 			exist, err := isPathExist(_dir)
 			if err != nil {
@@ -64,7 +72,6 @@ func (l *Log) init() error {
 				}
 			}
 
-			// 准备默认参数
 			if l.LogLevel == 0 {
 				l.LogLevel = LVL_DEBUG
 			}
@@ -72,6 +79,13 @@ func (l *Log) init() error {
 			if l.Suffix == "" {
 				l.Suffix = "log"
 			}
+
+			if l.BufferSize > 0 {
+				fmt.Println("bufferSize > 0, enabled auto flush!")
+				l.autoFlush = true
+				l.autoFlushDuration = 200
+			}
+
 			l.isInited = true
 		}
 
@@ -80,7 +94,8 @@ func (l *Log) init() error {
 	return nil
 }
 
-// 判断文件夹是否存在
+// 判断文件或文件夹是否存在
+// isPathExist
 func isPathExist(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
@@ -92,7 +107,8 @@ func isPathExist(path string) (bool, error) {
 	return false, err
 }
 
-// 计算日志文件路径
+// 获取当前日志文件路径
+// getLogPath of current log file
 func (l *Log) getLogPath(t *time.Time) string {
 	var buffer bytes.Buffer
 	buffer.WriteString(l.Filename)
@@ -106,6 +122,7 @@ func (l *Log) getLogPath(t *time.Time) string {
 	return buffer.String()
 }
 
+// createAndOpenFile
 // 创建并打开新文件
 func (l *Log) createAndOpenFile(filepath string) error {
 
@@ -144,6 +161,11 @@ func (l *Log) prepareLogFile(filepath string) error {
 
 		if strings.Compare(l.curLogFile.Name(), filepath) != 0 {
 
+			flushErr := l.Flush()
+			if flushErr != nil {
+				return flushErr
+			}
+
 			l.curLogFile.Close()
 			err := l.createAndOpenFile(filepath)
 			if err != nil {
@@ -157,7 +179,6 @@ func (l *Log) prepareLogFile(filepath string) error {
 		if err != nil {
 			return err
 		}
-
 	}
 	return nil
 }
@@ -198,6 +219,53 @@ func appendLevel(buf *[]byte, level int) {
 	*buf = append(*buf, prefix...)
 }
 
+// output
+func (l *Log) output(msg string, level int) error {
+	l.mu.Lock()
+	t := time.Now()
+	err := l.prepareLogFile(l.getLogPath(&t))
+	if err != nil {
+		l.mu.Unlock()
+		flushErr := l.Flush()
+		if flushErr != nil {
+			return flushErr
+		}
+		return err
+	}
+
+	//format Header
+	year, month, day := t.Date()
+	itoa(&l.buf, year, 4)
+	l.buf = append(l.buf, '/')
+	itoa(&l.buf, int(month), 2)
+	l.buf = append(l.buf, '/')
+	itoa(&l.buf, day, 2)
+	l.buf = append(l.buf, ' ')
+
+	hour, min, sec := t.Clock()
+	itoa(&l.buf, hour, 2)
+	l.buf = append(l.buf, ':')
+	itoa(&l.buf, min, 2)
+	l.buf = append(l.buf, ':')
+	itoa(&l.buf, sec, 2)
+
+	l.buf = append(l.buf, '.')
+	itoa(&l.buf, t.Nanosecond()/1e6, 3)
+	l.buf = append(l.buf, ' ')
+
+	// log level
+	appendLevel(&l.buf, level)
+
+	// log msg
+	l.buf = append(l.buf, msg...)
+	if len(msg) == 0 || msg[len(msg)-1] != '\n' {
+		l.buf = append(l.buf, '\n')
+	}
+
+	l.mu.Unlock()
+	return nil
+}
+
 // 写日志
 func (l *Log) writeLog(msg string, level int) error {
 	err := l.init()
@@ -208,52 +276,67 @@ func (l *Log) writeLog(msg string, level int) error {
 
 	if l.LogLevel <= level {
 
-		l.mu.Lock()
-		defer l.mu.Unlock()
+		l.output(msg, level)
 
-		t := time.Now()
-		err := l.prepareLogFile(l.getLogPath(&t))
-		if err != nil {
-			return err
-		}
+		if len(l.buf) > l.BufferSize {
+			err := l.Flush()
+			if err != nil {
+				return err
+			}
+		} else {
+			if (!l.isFlushTiming) && l.autoFlush {
+				l.isFlushTiming = true
 
-		l.buf = l.buf[:0]
-
-		//format Header
-		year, month, day := t.Date()
-		itoa(&l.buf, year, 4)
-		l.buf = append(l.buf, '/')
-		itoa(&l.buf, int(month), 2)
-		l.buf = append(l.buf, '/')
-		itoa(&l.buf, day, 2)
-		l.buf = append(l.buf, ' ')
-
-		hour, min, sec := t.Clock()
-		itoa(&l.buf, hour, 2)
-		l.buf = append(l.buf, ':')
-		itoa(&l.buf, min, 2)
-		l.buf = append(l.buf, ':')
-		itoa(&l.buf, sec, 2)
-
-		l.buf = append(l.buf, '.')
-		itoa(&l.buf, t.Nanosecond()/1e6, 3)
-		l.buf = append(l.buf, ' ')
-
-		// log level
-		appendLevel(&l.buf, level)
-
-		// log msg
-		l.buf = append(l.buf, msg...)
-		if len(msg) == 0 || msg[len(msg)-1] != '\n' {
-			l.buf = append(l.buf, '\n')
-		}
-		_, err = l.curLogFile.Write(l.buf)
-		if err != nil {
-			fmt.Printf("write log error![%v]\n", err)
-			return err
+				go func() {
+					if l.autoFlush {
+						time.Sleep(time.Duration(l.autoFlushDuration) * time.Millisecond)
+						l.Flush()
+						l.isFlushTiming = false
+					}
+				}()
+			}
 		}
 	}
 	return nil
+}
+
+// Flush
+func (l *Log) Flush() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if len(l.buf) != 0 {
+		_, err := l.curLogFile.Write(l.buf)
+		if err != nil {
+			fmt.Printf("flush log error![%v]\n", err)
+			return err
+		}
+		l.buf = l.buf[:0]
+	}
+
+	return nil
+}
+
+// 关闭自动flush
+func (l *Log) DisableAutoFlush() error {
+
+	err := l.init()
+	if err != nil {
+		fmt.Printf("init error![%v]\n", err)
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Println("disabled auto flush!")
+	l.autoFlush = false
+	return nil
+}
+
+// SetFlushDuration
+func (l *Log) SetFlushDuration(duration int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.autoFlushDuration = duration
 }
 
 // 业务日志，不受日志级别影响
