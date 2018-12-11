@@ -1,4 +1,7 @@
-// 日志工具类
+// Copyright 2012 sialot. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package ezlog
 
 import (
@@ -29,7 +32,7 @@ const (
 // BufferSize    缓存容量
 // autoFlush     自动flush标志
 // curLogFile    当前日志文件
-// buf           for accumulating text to write
+// buf           用于输出的日志数据缓存
 type Log struct {
 	Filename          string
 	Pattern           string
@@ -122,8 +125,8 @@ func (l *Log) getLogPath(t *time.Time) string {
 	return buffer.String()
 }
 
-// createAndOpenFile
 // 创建并打开新文件
+// createAndOpenFile
 func (l *Log) createAndOpenFile(filepath string) error {
 
 	exist, err := isPathExist(filepath)
@@ -155,6 +158,8 @@ func (l *Log) createAndOpenFile(filepath string) error {
 }
 
 // 准备日志文件
+// 如果计算出的目标文件与当前打开的文件不符，关闭当前文件，创建并打开新文件。
+// prepare log file
 func (l *Log) prepareLogFile(filepath string) error {
 
 	if l.curLogFile != nil {
@@ -183,6 +188,7 @@ func (l *Log) prepareLogFile(filepath string) error {
 	return nil
 }
 
+// 数字补零
 // Cheap integer to fixed-width decimal ASCII. Give a negative width to avoid zero-padding.
 func itoa(buf *[]byte, i int, wid int) {
 
@@ -201,7 +207,8 @@ func itoa(buf *[]byte, i int, wid int) {
 	*buf = append(*buf, b[bp:]...)
 }
 
-// appendLevel
+// 添加日志级别信息
+// append level info
 func appendLevel(buf *[]byte, level int) {
 
 	var prefix string
@@ -219,7 +226,8 @@ func appendLevel(buf *[]byte, level int) {
 	*buf = append(*buf, prefix...)
 }
 
-// output
+// 输出数据到缓存
+// output log data to buf
 func (l *Log) output(msg string, level int) error {
 	l.mu.Lock()
 	t := time.Now()
@@ -267,6 +275,7 @@ func (l *Log) output(msg string, level int) error {
 }
 
 // 写日志
+// write log
 func (l *Log) writeLog(msg string, level int) error {
 	err := l.init()
 	if err != nil {
@@ -300,6 +309,7 @@ func (l *Log) writeLog(msg string, level int) error {
 	return nil
 }
 
+// 清空缓冲区，写入日志文件
 // Flush
 func (l *Log) Flush() error {
 	l.mu.Lock()
@@ -318,6 +328,7 @@ func (l *Log) Flush() error {
 }
 
 // 关闭自动flush
+// disable auto flush
 func (l *Log) DisableAutoFlush() error {
 
 	err := l.init()
@@ -332,6 +343,7 @@ func (l *Log) DisableAutoFlush() error {
 	return nil
 }
 
+// 设置自动Flush间隔
 // SetFlushDuration
 func (l *Log) SetFlushDuration(duration int) {
 	l.mu.Lock()
