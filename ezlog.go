@@ -6,6 +6,7 @@ package ezlog
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,12 +46,17 @@ type Log struct {
 	curLogFile        *os.File
 	buf               []byte
 	isInited          bool
+	isInitFailed      bool
 	isFlushTiming     bool
 }
 
 // 初始化
 // init
 func (l *Log) init() error {
+
+	if l.isInitFailed {
+		return errors.New("init failed, can't output log")
+	}
 
 	if !l.isInited {
 
@@ -59,10 +65,17 @@ func (l *Log) init() error {
 
 		if !l.isInited {
 
+			if l.Filename == "" {
+				l.isInitFailed = true
+				fmt.Printf("Filename can't be \"\"!\n")
+				return errors.New("Filename can't be \"\"!\n")
+			}
+
 			// prepare the parent folder of the log file
 			_dir := filepath.Dir(l.Filename)
 			exist, err := isPathExist(_dir)
 			if err != nil {
+				l.isInitFailed = true
 				fmt.Printf("get dir error![%v]\n", err)
 				return err
 			}
@@ -70,7 +83,8 @@ func (l *Log) init() error {
 			if !exist {
 				err := os.MkdirAll(_dir, os.ModePerm)
 				if err != nil {
-					fmt.Printf("mkdir failed![%v]\n", err)
+					l.isInitFailed = true
+					fmt.Printf("make dir failed![%v]\n", err)
 					return err
 				}
 			}
@@ -84,7 +98,6 @@ func (l *Log) init() error {
 			}
 
 			if l.BufferSize > 0 {
-				fmt.Println("bufferSize > 0, enabled auto flush!")
 				l.autoFlush = true
 				l.autoFlushDuration = 200
 			}
@@ -277,36 +290,37 @@ func (l *Log) output(msg string, level int) error {
 // 写日志
 // write log
 func (l *Log) writeLog(msg string, level int) error {
+
 	err := l.init()
 	if err != nil {
-		fmt.Printf("init error![%v]\n", err)
 		return err
-	}
+	} else {
 
-	if l.LogLevel <= level {
+		if l.LogLevel <= level {
 
-		l.output(msg, level)
+			l.output(msg, level)
 
-		if len(l.buf) > l.BufferSize {
-			err := l.Flush()
-			if err != nil {
-				return err
-			}
-		} else {
-			if (!l.isFlushTiming) && l.autoFlush {
-				l.isFlushTiming = true
+			if len(l.buf) > l.BufferSize {
+				err := l.Flush()
+				if err != nil {
+					return err
+				}
+			} else {
+				if (!l.isFlushTiming) && l.autoFlush {
+					l.isFlushTiming = true
 
-				go func() {
-					if l.autoFlush {
-						time.Sleep(time.Duration(l.autoFlushDuration) * time.Millisecond)
-						l.Flush()
-						l.isFlushTiming = false
-					}
-				}()
+					go func() {
+						if l.autoFlush {
+							time.Sleep(time.Duration(l.autoFlushDuration) * time.Millisecond)
+							l.Flush()
+							l.isFlushTiming = false
+						}
+					}()
+				}
 			}
 		}
+		return nil
 	}
-	return nil
 }
 
 // 清空缓冲区，写入日志文件
@@ -333,14 +347,13 @@ func (l *Log) DisableAutoFlush() error {
 
 	err := l.init()
 	if err != nil {
-		fmt.Printf("init error![%v]\n", err)
 		return err
+	} else {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		l.autoFlush = false
+		return nil
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	fmt.Println("disabled auto flush!")
-	l.autoFlush = false
-	return nil
 }
 
 // 设置自动Flush间隔
