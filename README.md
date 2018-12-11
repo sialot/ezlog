@@ -15,7 +15,7 @@ Ezlog 是一个支持日志文件分割的日志包。
 文件输出路径，按：Filename + Pattern + "." + Suffix 拼接
 
 #### 最小初始化参数
-日志的log级别默认为debug，输出日志位置：/var/log/demo-20181211_112800.txt
+日志的log级别默认为debug，输出日志位置：/var/log/demo.log
 
 ```go
 	logger := ezlog.Log{Filename: "/var/log/demo"}	
