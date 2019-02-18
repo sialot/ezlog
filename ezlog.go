@@ -179,9 +179,13 @@ func (l *Log) prepareLogFile(filepath string) error {
 
 		if strings.Compare(l.curLogFile.Name(), filepath) != 0 {
 
-			flushErr := l.Flush()
-			if flushErr != nil {
-				return flushErr
+			if len(l.buf) != 0 {
+				_, flushErr := l.curLogFile.Write(l.buf)
+				if flushErr != nil {
+					fmt.Printf("flush log error![%v]\n", flushErr)
+					return flushErr
+				}
+				l.buf = l.buf[:0]
 			}
 
 			l.curLogFile.Close()
